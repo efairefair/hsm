@@ -6,6 +6,7 @@
 #include <atomic>
 
 #include "hsmTypes.h"
+#include "variable.h"
 
 class rtZone;
 class state;
@@ -22,21 +23,24 @@ class rtFrame
         rtZone * myZone;
         subMachine * mySubMachine;
 
-        absolutePathType absolutePath;                  // the frames location in the runtime tree
-        std::string pathStr();                          // converts absolute path to a string
-        variable siblingOrder();                        // the last number in the absolutePath
-        soType numSiblings();
+        hsmPath absolutePath;                               // the frames location in the runtime tree
+        hsmString pathStr();                                // converts absolute path to a string
 
         rtFrame * parentFrame;
-        std::atomic<uint_least32_t> numChildFrames;     // the number of active + dormant child frames
-        std::atomic<uint_least32_t> nextChild;          // the siblingOrder of the next child of this frame
 
-        std::map<std::string,variable> instantiations;
+        hsmUint         depth;              // the depth of this frame in the runtime tree
+        hsmAtomicUint   numChildFrames;     // the number of active + dormant child frames
+        hsmUint         nextChild;          // the siblingOrder of the next child of this frame
+        hsmUint         siblingOrder;
+
+        std::map<std::string,variable *> instantiations;  // variable instantiations.
 
         state * evaluateNextStates();                   // return first possible transition or 0 if none
         void makeTransition(state * nextState);         // make transition to nextState (presumably found via evaluateNextStates() above)
 
-        msg * myMsg;                                    // for incoming or outgoing messages from this frame (only one at a time is possible)
+
+
+        pdu * thePdu;                                    // for incoming or outgoing messages from this frame (only one at a time is possible)
         void encodeMsg();
         void decodeMsg();
 

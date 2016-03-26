@@ -18,12 +18,12 @@ class rtTree;
 class hsm
 {
     public:
-        typedef std::list<unsigned int> absolutePathType;
+        //typedef std::list<unsigned int> absolutePathType;
 
         hsm(std::string);
         ~hsm();
         std::string name;
-        std::multimap<subMachine *, subMachine *> subMachineTable;    // key is parent; if key=0 it's the Initial subMachine
+        std::multimap<subMachine *, subMachine *> subMachineTable;    // parent-child; first is parent; second is child; if first=0 then second is Initial
         rtTree * execute();
         subMachine * initialSubMachine;
     protected:

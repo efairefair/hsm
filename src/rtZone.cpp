@@ -18,15 +18,21 @@
 //
 
 void rtZone::operator()() {
+
     //
-    // thread entry point for any zone
+    // thread entry point each executing zone
     //
-    // first create an eyecatcher -- a unique string for the zone.  Use the path of the initial frame in the zone.  Note: initial zone will have zero-length eyecatcher.
-    // this is used for several purposes, most notably as part of the per-zone log file name.
+
+    // create an eyecatcher -- a unique string for the zone/thread.  Use the path of the initial frame in the zone for this.  Note: initial zone will have zero-length eyecatcher.
+    // this is used mainly as part of the per-zone/per-thread log file names.
+    // Having multiple threads writing to the same log file requires syncronization which slows things down too much
 
     eyeCatcher=activeFrames.begin()->second->pathStr();
 
+
+    //
     // open a log file for this zone only-- useful because sharing an ostream between zones/threads is not practical due to resulting interleaved output
+    //
     //erfc logFile.open("/tmp/{"+eyeCatcher+"}",std::ios::out);
     //erfc logFile<<"zone starting"<<std::endl;
 
@@ -46,19 +52,23 @@ void rtZone::operator()() {
     zoneLock.lock();
     //erfc logFile<<"operator(): zone done, self locked"<<std::endl;
 
+    //
     // make a sweep with the zone locked to delete any remaining dormant frames with no children
+    //
     unsigned int dormantFramesFreed=0;
     while (dormantFramesFreed>0) { // while loop always loops at least once
         dormantFramesFreed=0;
         for(auto i=dormantFrames.begin();i!=dormantFrames.end();i++) {
             //erfc logFile<<"operator(): considering: {"<<i->second->pathStr()<<"}"<<std::endl;
-            if (i->second->numChildFrames==0) {
+            hsmAtomicUint & candidatenumChildFrames         = ( (hsmVariable<hsmAtomicUint>   *) i->second->instantiations["numChildFrames"])->getReference();
+            hsmPath &       candidateabsolutePath           = ( (hsmVariable<hsmPath>         *) i->second->instantiations["absolutePath"])->getReference();
+            if (candidatenumChildFrames==0) {
                 //erfc logFile<<"operator(): considering: {"<<i->second->pathStr()<<"} has no childFrames"<<std::endl;
                 dormantFramesFreed++;
-                dormantFrames.erase(i->second->absolutePath);   // caution: this is deleting from the map being iterated
-                if (i->second->parentFrame != 0) {
+                dormantFrames.erase(candidateabsolutePath);   // note: deleting from the map currently being iterated, best to start over
+                //erfc if (i->second->parentFrame != 0) {
                     //erfc logFile<<"operator():  C: {"<<i->second->parentFrame->pathStr()<<"} numChildFrames: "<<i->second->parentFrame->numChildFrames<<std::endl;
-                }
+                //erfc }
                 freeFrames.insert(std::pair<std::string,rtFrame *>(i->second->mySubMachine->name,i->second));
                 break;
             }
@@ -91,40 +101,44 @@ void rtZone::operator()() {
 
 bool rtZone::tryDelete(rtZone * deletingZone) {
 
-    // try to delete this zone (and, if deleted, recursively try to delete the parent too; return TRUE if top-most zone is deleted (I.E. the hsm is done executing!)
-    // original zone performing the delete is passed in as deletingZone
+    // try to delete this zone.
+    // Note it is not always possible to delete a zone at the current time.
+    // We might have to wait until later to delete
+    // If we can delete though, recursively try to delete the parent zone too; return TRUE if the top-most zone is deleted (I.E. the hsm is done executing!)
+    //
+    // Note: the original zone trying the delete is passed in recursively
 
     //erfc deletingZone->logFile<<"tryDelete: "<<"("<<eyeCatcher<<")"<<" locking self zone"<<std::endl;
     zoneLock.lock();
     //erfc deletingZone->logFile<<"tryDelete: "<<"("<<eyeCatcher<<")"<<" locked self zone"<<std::endl;
+
     //
     // handle case where zone is not dormant
     //
     if ((!zoneIsInactive)) {
-        // this zone is not dormant -- its thread is still accessing frames -- we can't really do anything to it
+        // this zone is not dormant -- its thread is still running and accessing frames -- we can't really do anything to it now.
         //erfc deletingZone->logFile<<"tryDelete: "<<"("<<eyeCatcher<<")"<<" unlocking self zone (not dormant)"<<std::endl;
         zoneLock.unlock();
         //erfc deletingZone->logFile<<"tryDelete: "<<"("<<eyeCatcher<<")"<<" unlocked self zone (not dormant) and returning false"<<std::endl;
         return false;
     }
 
-
     //
-    // zone is locked and inactive -- its thread is not accessing frames any longer
+    // at this point we know the zone is locked and is inactive -- its thread is not accessing any of its frames any longer
     // sweep through and remove any dormant frames with no child frames
-    // this MT activity is mutexed via zoneLock
+    // this activity is mutexed via zoneLock
     //
     size_t dormantFramesFreed;
     while (dormantFramesFreed>0) { // while loop - at least one iteration
         dormantFramesFreed=0;
         //erfc deletingZone->logFile<<"tryDelete: "<<"("<<eyeCatcher<<")"<<" before sweep through dormant frames (active/dormant/free: "<<activeFrames.size()<<"/"<<dormantFrames.size()<<"/"<<freeFrames.size()<<")"<<std::endl;
         for(auto i=dormantFrames.begin();i!=dormantFrames.end();i++) {
+
             if (i->second->numChildFrames==0) {
                 dormantFramesFreed++;
                 freeFrames.insert(std::pair<std::string,rtFrame *>(i->second->mySubMachine->name,i->second));
 
                 if (i->second->parentFrame != 0) {
-                    i->second->parentFrame->numChildFrames--;
                     //erfc deletingZone->logFile<<"tryDelete: C: {"<<i->second->parentFrame->pathStr()<<"} numChildFrames: "<<i->second->parentFrame->numChildFrames<<std::endl;
                 }
 
@@ -189,21 +203,24 @@ rtFrame * rtZone::makeFrame(rtZone * theZone, subMachine * targetSubMachine)  {
         newFrame->myZone=theZone;
         newFrame->mySubMachine=targetSubMachine;
         newFrame->currentState=targetSubMachine->stateTable.find( (state *) 0)->second;         // initialize current-state to Start state of targetSubMachine
-        newFrame->nextChild=0;
-        newFrame->numChildFrames=0;
         newFrame->parentFrame=0;
         newFrame->frameIsDormant=false;
-        assert(newFrame->myMsg==0);
+        assert(newFrame->thePdu==0);
+        newFrame->numChildFrames=0;
+        newFrame->nextChild=0;
+
     }
     else {
         newFrame = new rtFrame(theZone,targetSubMachine);
         newFramesCreated++;
     }
-    // instantiate or re-initialize the variables
-    for(std::map<std::string,variable>::iterator j = targetSubMachine->declarations.begin();j!=targetSubMachine->declarations.end();j++) {
-        newFrame->instantiations[j->first]=j->second;   // re-initialize the variables
-    }
 
+    // copy the variables declared in the targetSubMachine.  Note they were previously instantiated so no need to allocate new
+    for(std::map<std::string,std::pair<hsmType,variable *>>::iterator j = targetSubMachine->declarations.begin();j!=targetSubMachine->declarations.end();j++) {
+        std::string theName = j->first;
+        std::pair<hsmType, variable *> theDeclaration = j->second;
+        *(newFrame->instantiations[theName]) = *(theDeclaration.second);
+    }
     return newFrame;
 }
 
@@ -250,6 +267,7 @@ std::pair<rtFrame *, state *> rtZone::evaluateFrames() {
     }
     // consider dormant frames second
     for (auto j=dormantFrames.begin();j!=dormantFrames.end();j++) {
+
         if (j->second->numChildFrames==0) {
             return std::pair<rtFrame *, state *>( (rtFrame *) j->second, (state *) 0);
         }
@@ -314,7 +332,8 @@ void rtZone::executeActivePhase() {
 
         // check if a dormant frame needs to be freed
         if ((readyToTransition.first!=0) && (readyToTransition.second==0)) {
-            dormantFrames.erase(readyToTransition.first->absolutePath);
+            hsmPath &       dormantabsolutePath           = ( (hsmVariable<hsmPath>         *) readyToTransition.first->instantiations["absolutePath"])->getReference();
+            dormantFrames.erase(dormantabsolutePath);
             freeFrames.insert(std::pair<std::string,rtFrame *>(readyToTransition.first->mySubMachine->name,readyToTransition.first));
             continue;
         }

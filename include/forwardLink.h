@@ -7,7 +7,6 @@ class forwardLink
 {
     public:
         forwardLink(subMachine *, forwardLinkType,bool);
-        ~forwardLink();
         subMachine * targetSubMachine;
         forwardLinkType direction;
         bool newThread;

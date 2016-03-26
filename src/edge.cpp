@@ -7,11 +7,6 @@
 #include "state.h"
 #include "variable.h"
 
-edge::edge()
-{
-    sign=hsmInternalEdge;
-}
-
 void edge::setVerb(std::string newVerb, hsmEdgeSignType newSign) {
     // ensure a verb is not already present
     assert (verb.size()==0);
@@ -24,26 +19,25 @@ void edge::setVerb(std::string newVerb, hsmEdgeSignType newSign) {
     return;
 }
 
-void edge::addParameter(std::string parameterName) {
-
-    // parameterName always names a variable at or above the subMachine containing this edge
+void edge::addParameter(std::string newParameterName) {
+    // parameterName names a variable declared
+    //      a) in the subMachine containing this edge, or
+    //      b) in a subMachine above it in the hierarchy of subMachines
+    // Note the same name can be declared in multiple subMachines;
+    // so find the "nearest" declaration, starting at the subMachine containing this edge and working up
     unsigned int heightAbove=0;
     subMachine * i = myState->mySubMachine;
-
-    // find the height above us in the hierarchy of subMachines where the variable named parameterName is declared
     while (i!= (subMachine *) 0) {
-        if (i->declarations.find(parameterName) != i->declarations.end() )
+        if (i->declarations.find(newParameterName) != i->declarations.end() )
             break;
         i=i->parentSubMachine;
         heightAbove++;
     }
+    assert(i!=(subMachine *) 0); // make sure we found the name
+    assert(i->declarations.find(newParameterName) != i->declarations.end());
 
-    // ensure variable with that name and type is found
-    assert(i!=(subMachine *) 0);
-    parameters.push_back( pListEntryType(parameterName, i->declarations[parameterName].theType, heightAbove) );
+    std::pair<hsmType,variable *> theDeclaration = i->declarations[newParameterName];
+    pListEntry newParameter(newParameterName,theDeclaration.first,heightAbove);
+    this->pList.push_back( newParameter );
 }
 
-edge::~edge()
-{
-    //dtor
-}

@@ -11,6 +11,7 @@
 #include <mutex>
 
 #include "hsmTypes.h"
+#include "pdu.h"
 
 class rtZone
 {
@@ -33,13 +34,13 @@ class rtZone
         rtZone * superiorZone;                                  // the zone "above me"
 
 
-        std::map<absolutePathType, rtFrame *> activeFrames;     // indexed by absolute path
-        std::map<absolutePathType, rtFrame *> dormantFrames;    // indexed by absolute path
+        std::map<hsmPath, rtFrame *> activeFrames;     // indexed by absolute path
+        std::map<hsmPath, rtFrame *> dormantFrames;    // indexed by absolute path
         std::multimap<std::string, rtFrame *> freeFrames;       // indexed by subMachineName that created the frame originally
                                                                 // it behooves subMachines to re-use their own frames since the variables
                                                                 // don't need to be re-created (malloced) if so.
 
-        std::multimap<std::pair<std::string, std::string>, msg *> freeMsgs;  // indexed by subMachine name, verb
+        std::multimap<std::pair<std::string, std::string>, pdu *> freeMsgs;  // indexed by subMachine name, verb
 
         std::pair<rtFrame *, state *> evaluateFrames();   // find a frame that can transition, and it's next state
                                                                 // if first is NULL, no transition is possible

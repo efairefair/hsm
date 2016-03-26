@@ -10,7 +10,7 @@
 #include "hsm.h"
 #include "forwardLink.h"
 #include "hsm.h"
-#include "myAtomicInt.h"
+#include "variable.h"
 
 
 class state;
@@ -29,16 +29,13 @@ class subMachine
         hsm * myHsm;
         subMachine * parentSubMachine;
 
-        std::multimap<state *, state *> stateTable;                     // key is parent; if key=0 it's the Start state
-        std::map<std::string, variable> declarations;                   // variable declarations
+        std::multimap<state *, state *> stateTable;                         // key=value; key is parent-of value; if key=0 it's the Start state
+        std::map<std::string, std::pair<hsmType,variable *>>declarations;   // variable declarations for this subMachine
 
         subMachine * addSubMachine(std::string);
 
-        bool addVariable(std::string, hsmVarType);
-        bool addVariable(std::string, hsmVarType,hsmInt);
-        bool addVariable(std::string, hsmVarType,hsmBool);
-        bool addVariable(std::string, hsmVarType,hsmString);
-        bool addVariable(std::string, hsmVarType,hsmListInt);
+        void addVariable(std::string, variable *, hsmType);
+
         state * startState;
 
     protected:

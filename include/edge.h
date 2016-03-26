@@ -1,23 +1,23 @@
 #ifndef EDGE_H
 #define EDGE_H
 
-#include "msg.h"
+#include <string>
+
 #include "hsm.h"
+#include "parameterList.h"
 
 class edge
 {
     public:
-        edge();
-        ~edge();
 
-        hsmEdgeSignType sign;   // default: internal
-        std::string verb;       // default: empty string
-        pListType parameters;   // default: empty vector
+        hsmEdgeSignType sign = hsmInternalEdge;  // default: internal
+        std::string verb;                        // default: empty string
+        std::vector<pListEntry> pList;           // default: empty vector
 
         state * myState;
 
-        void setVerb(std::string, hsmEdgeSignType);        // set verb and sign
-        void addParameter(std::string);                 // variable name
+        void setVerb(std::string, hsmEdgeSignType);     // set verb and sign
+        void addParameter(std::string);
     protected:
     private:
 };

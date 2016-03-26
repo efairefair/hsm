@@ -40,49 +40,15 @@ subMachine * subMachine::addSubMachine(std::string newName)  // use to create al
     //ctor
 }
 
-bool subMachine::addVariable(std::string newName, hsmVarType newType)
+void subMachine::addVariable(std::string newName, variable * initialValue, hsmType newType)
 {
-    // ensure variable not previously declared
+    // this is called during building of the hsm only - not during execution
+    // ensure variable of this name not previously declared
+    // clone a copy of the initialValue
     assert(declarations.find(newName)==declarations.end());
-    // ensure listInt type (this is the only hsmType that has no initialValue provided (e.g. signature has only a name and type)
-    assert(newType==hsmListIntType);
-    variable varToAdd(newType);
-    declarations.insert(std::pair<std::string,variable>(newName,varToAdd));
-    return true;
-}
-
-
-bool subMachine::addVariable(std::string newName, hsmVarType newType, hsmInt initialValue)
-{
-    // ensure variable not previously declared
-    assert(declarations.find(newName)==declarations.end());
-    variable varToAdd(newType,initialValue);
-    declarations.insert(std::pair<std::string,variable>(newName,varToAdd));
-    return true;
-}
-
-bool subMachine::addVariable(std::string newName, hsmVarType newType, hsmBool initialValue)
-{
-    // ensure variable not previously declared
-    assert(declarations.find(newName)==declarations.end());
-    declarations.insert(std::pair<std::string,variable>(newName,variable(newType,initialValue)));
-    return true;
-}
-
-bool subMachine::addVariable(std::string newName, hsmVarType newType, hsmString initialValue)
-{
-    // ensure variable not previously declared
-    assert(declarations.find(newName)==declarations.end());
-    declarations.insert(std::pair<std::string,variable>(newName,variable(newType,initialValue)));
-    return true;
-}
-
-bool subMachine::addVariable(std::string newName, hsmVarType newType, hsmListInt initialValue)
-{
-    // ensure variable not previously declared
-    assert(declarations.find(newName)==declarations.end());
-    declarations.insert(std::pair<std::string,variable>(newName,variable(newType,initialValue)));
-    return true;
+    std::pair<hsmType,variable *> newRHS(newType,initialValue->clone());
+    declarations.insert(std::pair<std::string,std::pair<hsmType, variable *>>(newName,newRHS));
+    return;
 }
 
 subMachine::~subMachine()
@@ -90,6 +56,7 @@ subMachine::~subMachine()
     //dtor
     for(std::multimap<state *,state *>::iterator i=stateTable.begin();i!=stateTable.end();i++)
         delete i->second;
-    stateTable.clear();
+    for(std::map<std::string, std::pair<hsmType,variable *>>::iterator j=declarations.begin();j!=declarations.end();j++)
+        delete j->second.second;
 }
 

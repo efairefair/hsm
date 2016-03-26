@@ -5,28 +5,34 @@
 #include <assert.h>
 #include <thread>
 #include <utility>
+#include <atomic>
+#include <map>
 
 #include "hsmTypes.h"
 #include "state.h"
 #include "rtZone.h"
 #include "variable.h"
-#include "msg.h"
+#include "pdu.h"
 
 #include "subMachine.h"
 
-rtFrame::rtFrame(rtZone * theZone, subMachine * target)  {
+rtFrame::rtFrame(rtZone * theZone, subMachine * target)  {            // note: rtZone includes a free list - hope you checked there first before calling this constructor
     myZone=theZone;
     mySubMachine=target;
-    currentState=target->stateTable.find( (state *) 0)->second;
-    nextChild=0;
-    numChildFrames=0;
-    parentFrame=0;
-    myMsg=0;
+    currentState=target->stateTable.find( (state *) 0)->second;       // initialize currentState to the state with no parent - it's the Start state by definition
+    parentFrame=0;                                                    // set parentFrame to zero - the caller must update this later
+    thePdu=0;
     frameIsDormant=false;
 
-    // instantiate (copy) the declared variables in target subMachine
-    for (auto i = target->declarations.begin(); i!=target->declarations.end(); i++) {
-            instantiations[i->first] = target->declarations[i->first];
+    depth=0;
+    numChildFrames=0;
+    nextChild=0;
+    absolutePath.clear();                                             // initialize to empty vector - caller will update
+    siblingOrder=0;                                                   // caller will also update
+
+    // instantiate (clone) the declared variables from the target subMachine
+    for (auto i = target->declarations.begin(); i!=target->declarations.end(); i++) {           // reminder: declarations is map<string,pair<hsmType,variable *>>
+        instantiations.insert(std::pair<std::string,variable *>(i->first, i->second.second->clone()));
     }
 }
 
@@ -36,10 +42,11 @@ rtFrame::~rtFrame()
 }
 
 std::string rtFrame::pathStr() {
-    // print the absolute path as a string of dot-separated numbers
+    // print the frames absolute path as a string of dot-separated numbers
     std::string rv;
     bool pastFirst=false;
-    for (auto i = absolutePath.begin();i!=absolutePath.end();i++) {
+
+    for (auto i=absolutePath.begin();i!=absolutePath.end();i++) {
         if (pastFirst)
             rv=rv.append('.' + std::to_string(*i));
         else {
@@ -52,7 +59,7 @@ std::string rtFrame::pathStr() {
 
 state * rtFrame::evaluateNextStates() {
 
-    // this function should evaluate the possible nextStates for the currentState of this frame, and return either:
+    // this function evaluates some or all all possible nextStates for this frame, and return either:
     //      - a pointer to a nextState that is ready (i.e. whose predicate evaluates true), or
     //      - 0 if no possible transitions
 
@@ -62,31 +69,30 @@ state * rtFrame::evaluateNextStates() {
     // ensure currentState is not pointing to a final state (see makeTransition step 5 to know why this should never happen)
     assert(possibleNextStates.first != possibleNextStates.second);
 
-    // check each predicate until one evalutes true
+    // check predicates (stop if one evalutes true)
     std::multimap<state *, state *>::iterator candidateNextState;
     for (candidateNextState=possibleNextStates.first;candidateNextState!=possibleNextStates.second;candidateNextState++) {
-        //erfc  myZone->logFile<<"evaluateNextStates: {" << pathStr() << "}  subMachine " << mySubMachine->name <<  " in state " << currentState->name << " checking predicate for state "<<candidateNextState->second->name<<std::endl;
-        // understanding this boolean expression here is the key to understanding state transitions...
+        //erfc myZone->logFile<<"evaluateNextStates: {" << pathStr() << "}  subMachine " << mySubMachine->name <<  " in state " << currentState->name << " checking predicate for state "<<candidateNextState->second->name<<std::endl;
         if  (
                 ((candidateNextState->second->predicate==0) || (candidateNextState->second->predicate(this)))
                 &&
                 (
                     ( candidateNextState->second->inboundEdge.sign!=hsmRxEdge) ||
                     ((candidateNextState->second->inboundEdge.sign==hsmRxEdge) &&
-                        ((myMsg != 0) && (myMsg->verb == candidateNextState->second->inboundEdge.verb))
+                        ((thePdu != 0) && (thePdu->verb == candidateNextState->second->inboundEdge.verb))
                     )
                 )
             ) {
-            //erfc  myZone->logFile<<"evaluateNextStates: predicate evaluated true, returning"<<std::endl;
+            //erfc myZone->logFile<<"evaluateNextStates: predicate evaluated true, returning"<<std::endl;
             myZone->predicatesEvaluatedTrue++;
             return candidateNextState->second;
         }
         else {
             myZone->predicatesEvaluatedFalse++;
-            //erfc  myZone->logFile<<"evaluateNextStates: predicate evaluated false"<<std::endl;
+            //erfc myZone->logFile<<"evaluateNextStates: predicate evaluated false"<<std::endl;
         }
     }
-    //erfc  myZone->logFile<<"evaluateNextStates: no next state ready"<<std::endl;
+    //erfc myZone->logFile<<"evaluateNextStates: no next state ready"<<std::endl;
     return 0;
 }
 
@@ -98,11 +104,12 @@ void rtFrame::makeTransition(state * nextState) {
     //
     // Transition this frame to nextState in five easy steps.
     //
+
     //////////////////////////////////////////////////////////////////
     //
     // step 1 of 5 - advance the current state pointer
     //
-    //erfc  myZone->logFile<< "makeTransition: {" << pathStr() << "} in subMachine: " << mySubMachine->name <<  " state: " << currentState->name << " >>>>>>>>>>>> " << nextState->name <<std::endl;
+    //erfc myZone->logFile<< "makeTransition: {" << pathStr() << "} in subMachine: " << mySubMachine->name <<  " state: " << currentState->name << " >>>>>>>>>>>> " << nextState->name <<std::endl;
     myZone->transitionCount++;
     currentState=nextState;
 
@@ -111,35 +118,35 @@ void rtFrame::makeTransition(state * nextState) {
     // step 2 of 5 - process the inbound or outbound message, if any
     //
     if (currentState->inboundEdge.sign!=hsmInternalEdge) {
-        //erfc  myZone->logFile<< "makeTransition: {" << pathStr() << "} in subMachine: " << mySubMachine->name <<  " state: " << currentState->name << ": processing message" <<std::endl;
+        //erfc myZone->logFile<< "makeTransition: {" << pathStr() << "} in subMachine: " << mySubMachine->name <<  " state: " << currentState->name << ": processing message" <<std::endl;
         if (currentState->inboundEdge.sign==hsmRxEdge) {  // receive a message
             //erfc myZone->logFile<<"makeTransition: rx message"<<std::endl;
-            assert((myMsg!=0) && (myMsg->payload.size()==currentState->inboundEdge.parameters.size()));
-            assert(myMsg->verb==currentState->inboundEdge.verb);
+            assert((thePdu!=0) && (thePdu->payload.size()==currentState->inboundEdge.pList.size()));
+            assert(thePdu->verb==currentState->inboundEdge.verb);
             decodeMsg();
         }
         else {                                  // transmit a message
             //erfc myZone->logFile<<"makeTransition: tx message"<<std::endl;
-            assert(myMsg==0);
+            assert(thePdu==0);
             encodeMsg();
         }
     }
-    else {
-        myZone->logFile<< "makeTransition: {" << pathStr() << "} in subMachine: " << mySubMachine->name <<  " state: " << currentState->name << ": no message to process" <<std::endl;
-    }
+    //erfc else {
+        //erfc myZone->logFile<< "makeTransition: {" << pathStr() << "} in subMachine: " << mySubMachine->name <<  " state: " << currentState->name << ": no message to process" <<std::endl;
+    //erfc }
     //////////////////////////////////////////////////////////////////
     //
     // step 3 of 5 - process forward links if any
     //
     assert (currentState->links.size()<3);
-    //std::list<forwardLink *>::iterator theLink;
+
     for(auto theLink=currentState->links.begin();theLink!=currentState->links.end();theLink++) {
         //erfc myZone->logFile<<"makeTransition: processing forward link"<<std::endl;
         myZone->forwardLinksEncountered++;
 
-        //erfc  std::string logString;
-        //erfc  if ((*theLink)->direction==horizontal) logString="horizontal";else logString="vertical";
-        //erfc  myZone->logFile<<"makeTransition: {" << pathStr() << "} in subMachine: " << mySubMachine->name <<  " state: " << currentState->name << " processing "<<logString<<" forward link to: " << (*theLink)->targetSubMachine->name << std::endl;
+        //erfc std::string logString;
+        //erfc if ((*theLink)->direction==horizontal) logString="horizontal";else logString="vertical";
+        //erfc myZone->logFile<<"makeTransition: {" << pathStr() << "} in subMachine: " << mySubMachine->name <<  " state: " << currentState->name << " processing "<<logString<<" forward link to: " << (*theLink)->targetSubMachine->name << std::endl;
 
         rtZone * newFramesZone; // there will surely be a new frame created, but the new frame may go into our zone or a new zone (depending on newThread flag)
 
@@ -164,24 +171,30 @@ void rtFrame::makeTransition(state * nextState) {
         }
 
         rtFrame * newFrame = myZone->makeFrame(newFramesZone,(*theLink)->targetSubMachine);
+        newFrame->numChildFrames=0;
+        newFrame->nextChild=0;
 
         if ((*theLink)->direction==vertical) {
             //erfc myZone->logFile<<"makeTransition: setup new frame for vertical link"<<std::endl;
             newFrame->parentFrame=this;
+            newFrame->depth=depth+1;
             numChildFrames++;
-            //erfc myZone->logFile<<"makeTransition: {"<<pathStr()<<"} V: {"<<pathStr()<<"} numChildFrames: "<<numChildFrames<<std::endl;
-            newFrame->absolutePath=absolutePath;            // copy operation
-            newFrame->absolutePath.push_back(nextChild++);
+            newFrame->absolutePath=absolutePath;
+            newFrame->absolutePath.push_back(0);
+            newFrame->siblingOrder=0;
+            nextChild++;
+            assert((newFrame->depth==(depth+1)) && (newFrame->absolutePath.size()==(absolutePath.size()+1)));
         }
         else {
             //erfc myZone->logFile<<"makeTransition: setup new frame for horizontal link"<<std::endl;
             newFrame->parentFrame=parentFrame;
+            newFrame->depth=depth;
             parentFrame->numChildFrames++;
-            //erfc myZone->logFile<<"makeTransition: {"<<pathStr()<<"} H: {"<<parentFrame->pathStr()<<"} numChildFrames: "<<parentFrame->numChildFrames<<std::endl;
-            assert(absolutePath.size()>0);
-            newFrame->absolutePath=absolutePath;            // copy operation
-            newFrame->absolutePath.pop_back();
+            newFrame->absolutePath=parentFrame->absolutePath;
             newFrame->absolutePath.push_back(parentFrame->nextChild++);
+            newFrame->siblingOrder=siblingOrder+1;
+            parentFrame->nextChild++;
+            assert((newFrame->depth==depth) && (newFrame->absolutePath.size()==absolutePath.size()));
         }
 
         if ((*theLink)->newThread){
@@ -227,89 +240,107 @@ void rtFrame::makeTransition(state * nextState) {
     // step 5 of 5 - handle transition into a final state
     //
     if (currentState->numChildStates==0) {
-
         //erfc myZone->logFile<<"makeTransition: {" << pathStr() << "} in subMachine " << mySubMachine->name <<  " state " << currentState->name << " has reached a final state" << std::endl;
         frameIsDormant=true;
         myZone->activeFrames.erase(absolutePath);
         myZone->dormantFrames[absolutePath]=this;
 
-        rtFrame * candidateForDeletion=this;
-        while ((candidateForDeletion!=0) && (candidateForDeletion->myZone==myZone) && (candidateForDeletion->frameIsDormant) && (candidateForDeletion->numChildFrames==0)) {
-            myZone->freeFrames.insert(std::pair<std::string,rtFrame *>(candidateForDeletion->mySubMachine->name,candidateForDeletion));
-            myZone->dormantFrames.erase(candidateForDeletion->absolutePath);
-            if (candidateForDeletion->parentFrame!=0) {
-                candidateForDeletion->parentFrame->numChildFrames--;
+        rtFrame * candidate=this; // find candidates for deletion - start with this frame and work up towards the root frame.  Limited to just this zone, just dormant frames with no children
+
+        while ((candidate!=0) && (candidate->myZone==myZone) && (candidate->frameIsDormant) && (candidate->numChildFrames==0)) {
+
+            // get references to some candidate data (remember: horizontal links are not allowed in the root frame)
+
+            myZone->freeFrames.insert(std::pair<std::string,rtFrame *>(candidate->mySubMachine->name,candidate));
+            myZone->dormantFrames.erase(candidate->absolutePath);
+
+            if (candidate->parentFrame!=0) {
+                candidate->parentFrame->numChildFrames--;
             }
-            candidateForDeletion=candidateForDeletion->parentFrame;
+            candidate=candidate->parentFrame;
         }
     }
     return;
 }
-variable rtFrame::siblingOrder() {
-    variable rv;
-    assert(absolutePath.size()>0);
-    rv.theType=hsmUIntType;
-    rv.u=absolutePath.back();
-    return rv;
-}
-
-soType rtFrame::numSiblings() {
-    if (parentFrame==0)
-        return 0;
-    else
-        return parentFrame->numChildFrames-1;
-}
 
 void rtFrame::decodeMsg() {
-    // reminder: msg has a verb and vector of variables
-    auto oneVariable=myMsg->payload.begin();                             // traverses message payload (reminder: payload is a vector of pair<type,pointer to data> )
-    for(auto oneParameter=currentState->inboundEdge.parameters.begin();  // traverses edge parameters
-                                                                         // (reminder: edge parameters are tuple of <name, type, heightAbove>)
-        oneParameter!=currentState->inboundEdge.parameters.end();
-        oneParameter++) {
-        // ensure the data types match
-        assert(oneVariable->theType==std::get<1>(*oneParameter));
-        // find the target frame where the adverb will be stored
-        rtFrame * targetFrame=this;
-        for(unsigned int i=0;i<std::get<2>(*oneParameter);i++) {
-            assert (targetFrame->parentFrame!=0);
-            targetFrame=parentFrame;
-        }
+    // retrieve an incoming pdu - move the data from the pdu to final destinations at or above this frame
+    // reminder 1: the incoming pdu is stored in the rtFrame
+    // reminder 2: the destinations are determined by the edge
+    assert(thePdu!=0);
+    assert(thePdu->payload.size()==currentState->inboundEdge.pList.size());
+    assert(thePdu->verb==currentState->inboundEdge.verb);
 
-        targetFrame->instantiations[std::get<0>(*oneParameter)]=(*oneVariable);
-        oneVariable++;
+    variable * varbind;
+
+    for(auto i=currentState->inboundEdge.pList.begin();i!=currentState->inboundEdge.pList.end();i++) {
+        varbind = *(thePdu->payload.begin());
+        assert(depth >= i->theHeight);                              // ensure the height does not exceed the depth
+        rtFrame * dstFrame = this;                                    // find the rtFrame where it goes
+        for(hsmUint j=0;j<i->theHeight;j++)
+            dstFrame=parentFrame;
+        *(dstFrame->instantiations[i->theName])=*varbind;
+        varbind++;
     }
-    std::pair<std::string, std::string> ix = std::pair<std::string, std::string>(mySubMachine->name, currentState->inboundEdge.verb);
-    myZone->freeMsgs.insert(std::pair<std::pair<std::string, std::string>,msg*>(ix,myMsg));
-    myMsg=(msg *) 0;
+    std::pair<std::string, std::string> ix(mySubMachine->name, currentState->inboundEdge.verb);
+    myZone->freeMsgs.emplace(std::make_pair(std::make_pair(mySubMachine->name, currentState->inboundEdge.verb),thePdu));
+    thePdu=0;
 }
 
 void rtFrame::encodeMsg() {
+
+    assert(thePdu==0);
+    size_t varbindNumber=0;
+
+    //////////////////////////////////////
+    //
+    // try to allocate a previously freed PDU
+    // note: free list key is "subMachine name", "verb"
+    //
+
     auto i=myZone->freeMsgs.find(std::pair<std::string, std::string>(this->mySubMachine->name, currentState->inboundEdge.verb));
-    if (i==myZone->freeMsgs.end())
-        myMsg = new msg();
+
+    if (i==myZone->freeMsgs.end()) { // if no previously freed PDU is available, create a new one, and initialize it's payload
+        thePdu = new pdu();
+        // initialize the payload of the new pdu using declarations
+        thePdu->payload.resize(currentState->inboundEdge.pList.size());
+        for (auto j = currentState->inboundEdge.pList.begin();
+            j != currentState->inboundEdge.pList.end();
+            j++) {
+                std::string varToClone=j->theName;
+                subMachine * theSrcSubMachine = currentState->mySubMachine;
+                for (auto k=0;k<j->theHeight;k++)
+                    theSrcSubMachine=theSrcSubMachine->parentSubMachine;
+                variable * theSrcVariable=theSrcSubMachine->declarations[varToClone].second;
+                thePdu->payload[varbindNumber]=theSrcVariable->clone();
+            }
+        varbindNumber++;
+        }
     else {
-        myMsg = i->second;
+        thePdu = i->second;
         myZone->freeMsgs.erase(i);
+        thePdu->payload.clear();
     }
 
-    myMsg->verb = currentState->inboundEdge.verb;
-    myMsg->payload.clear();
+    thePdu->verb=currentState->inboundEdge.verb;
 
-    for(auto oneParameter=currentState->inboundEdge.parameters.begin();  // traverses edge parameters (reminder: edge parameters are tuple of <string, type, heightAbove>)
-        oneParameter!=currentState->inboundEdge.parameters.end();
-        oneParameter++) {
 
-        // find the target frame where the adverb will be stored
-        rtFrame * targetFrame=this;
-        for(unsigned int j=0;j<std::get<2>(*oneParameter);j++) {
-            assert (targetFrame->parentFrame!=0);
-            targetFrame=parentFrame;
-        }
+    varbindNumber=0;
+    for(auto        p= currentState->inboundEdge.pList.begin();  // traverses parameters (reminder: edge parameters are tuple of <string, type, heightAbove>)
+                    p!=currentState->inboundEdge.pList.end();
+                    p++) {
+        assert(depth >= p->theHeight);
+        // find the target frame where this part of the message will come from
+        rtFrame * srcFrame=this;
+        for(unsigned int j=0;j<p->theHeight;j++)
+            srcFrame=parentFrame;
 
-        // ensure the data types match from the parameters and targetFrame variable
-        assert(std::get<1>(*oneParameter)==targetFrame->instantiations[std::get<0>(*oneParameter)].theType);
-        myMsg->payload.push_back(targetFrame->instantiations[std::get<0>(*oneParameter)]);
+        /////////////////////////////////////////////
+        //
+        // copy the variable described in this pListEntry to the payload
+        //
 
+        *(thePdu->payload[varbindNumber]) = *(srcFrame->instantiations[p->theName]);
+        varbindNumber++;
     }
 }

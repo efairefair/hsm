@@ -7,8 +7,3 @@ forwardLink::forwardLink(subMachine * newTarget, forwardLinkType newDirection,bo
     this->newThread=newThreadRequested;
     this->direction=newDirection;
 }
-
-forwardLink::~forwardLink()
-{
-    //dtor
-}

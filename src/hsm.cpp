@@ -21,9 +21,9 @@
 // hsm -- the hierarchial state machine
 //
 
-hsm::hsm(std::string newName) {
+hsm::hsm(std::string newName) : initialSubMachine(new subMachine(this)) {
     name=newName;
-    initialSubMachine = new subMachine(this);
+    //initialSubMachine = new subMachine(this);
     subMachineTable.insert(std::pair<subMachine *, subMachine *> ( (subMachine *) 0,initialSubMachine));
 }
 

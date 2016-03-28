@@ -7,10 +7,10 @@
 #include "state.h"
 #include "variable.h"
 
-void edge::setVerb(std::string newVerb, hsmEdgeSignType newSign) {
-    // ensure a verb is not already present
+void edge::setVerb(std::string newVerb, hsmEdgeType newSign) {
+    // ensure a verb was not previously set
     assert (verb.size()==0);
-    // ensure verb being set was not previously set elsewhere in this subMachine
+    // ensure verb was not previously set in another state within this subMachine
     for(auto i = myState->mySubMachine->stateTable.begin();i!=myState->mySubMachine->stateTable.end();i++) {
         assert(i->second->inboundEdge.verb !=newVerb);
     }
@@ -20,11 +20,11 @@ void edge::setVerb(std::string newVerb, hsmEdgeSignType newSign) {
 }
 
 void edge::addParameter(std::string newParameterName) {
-    // parameterName names a variable declared
-    //      a) in the subMachine containing this edge, or
-    //      b) in a subMachine above it in the hierarchy of subMachines
-    // Note the same name can be declared in multiple subMachines;
-    // so find the "nearest" declaration, starting at the subMachine containing this edge and working up
+    // parameterName names a variable declared in either:
+    //      a) the subMachine containing this edge, or
+    //      b) a subMachine above the subMachine containing this edge.
+    // Note the same variable name can be declared in multiple subMachines, so:
+    // Find the "nearest" declaration, starting at the subMachine containing this edge, and working up towards Initial subMachine
     unsigned int heightAbove=0;
     subMachine * i = myState->mySubMachine;
     while (i!= (subMachine *) 0) {
@@ -33,9 +33,10 @@ void edge::addParameter(std::string newParameterName) {
         i=i->parentSubMachine;
         heightAbove++;
     }
-    assert(i!=(subMachine *) 0); // make sure we found the name
-    assert(i->declarations.find(newParameterName) != i->declarations.end());
+    assert(i!=(subMachine *) 0); // ensure we found a sub-machine containing the variable
+    assert(i->declarations.find(newParameterName) != i->declarations.end());    // ensure we found the variable
 
+    // this was kinda hard to read so I broke it into three statements
     std::pair<hsmType,variable *> theDeclaration = i->declarations[newParameterName];
     pListEntry newParameter(newParameterName,theDeclaration.first,heightAbove);
     this->pList.push_back( newParameter );

@@ -18,7 +18,7 @@ subMachine::subMachine(hsm * theMachine)    // use to create the Initial subMach
     //ctor
 }
 
-subMachine::subMachine(subMachine * parent,std::string newName) {
+subMachine::subMachine(subMachine * parent,std::string newName) { //use to create other subMachines besides the Initial subMachine
     name=newName;
     myHsm=parent->myHsm;
     parentSubMachine=parent;

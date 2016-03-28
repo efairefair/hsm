@@ -20,11 +20,9 @@ typedef std::vector<hsmUint>              hsmPath;
 // an enum for the above - ideally we'll get rid of this and just use templates
 typedef enum {hsmBoolType, hsmIntType, hsmUintType, hsmStringType, hsmAtomicUintType, hsmPathType} hsmType;
 
-const uint hsmTypeError=1;
-
 typedef enum {vertical, horizontal} forwardLinkType;
 
-typedef enum {hsmTxEdge, hsmRxEdge, hsmInternalEdge} hsmEdgeSignType;
+typedef enum {hsmTxEdge, hsmRxEdge, hsmInternalEdge} hsmEdgeType;
 
 class pdu;
 class msg;

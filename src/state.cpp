@@ -20,7 +20,7 @@ state::state(subMachine * owner) // use only to create the Start state
     inboundEdge.myState=this;
 }
 
-state::state(state * theParent, std::string newStateName)  // use to create other states besides the Start state
+state::state(state * theParent=(state *) 0, std::string newStateName="Start")  // use to create other states besides the Start state
 {
     assert(theParent->mySubMachine->stateTable.size()>0);
     for (std::multimap<state *,state *>::iterator i = theParent->mySubMachine->stateTable.begin();i!=theParent->mySubMachine->stateTable.end();i++)

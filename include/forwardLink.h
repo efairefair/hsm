@@ -3,15 +3,14 @@
 
 #include "hsmTypes.h"
 
-class forwardLink
-{
-    public:
-        forwardLink(subMachine *, forwardLinkType,bool);
+class forwardLink {
+    friend class rtFrame;
+    friend class state;
+    private:
+        forwardLink(subMachine * newTarget, forwardLinkType newDirection, bool newThreadRequested) : targetSubMachine(newTarget), direction(newDirection), newThread(newThreadRequested){};
         subMachine * targetSubMachine;
         forwardLinkType direction;
         bool newThread;
-    protected:
-    private:
 };
 
 #endif // FORWARDLINK_H

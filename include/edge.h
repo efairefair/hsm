@@ -8,18 +8,17 @@
 
 class edge
 {
+    friend class rtFrame;
+    friend class state;
     public:
-
-        hsmEdgeSignType sign = hsmInternalEdge;  // default: internal
+        void setVerb(std::string, hsmEdgeType);     // set verb and sign
+        void addParameter(std::string);
+    private:
+        hsmEdgeType sign = hsmInternalEdge;  // default: internal
         std::string verb;                        // default: empty string
         std::vector<pListEntry> pList;           // default: empty vector
-
         state * myState;
 
-        void setVerb(std::string, hsmEdgeSignType);     // set verb and sign
-        void addParameter(std::string);
-    protected:
-    private:
 };
 
 #endif // EDGE_H

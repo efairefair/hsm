@@ -31,8 +31,8 @@ rtFrame::rtFrame(rtZone * theZone, subMachine * target)  {            // note: r
     siblingOrder=0;                                                   // caller will also update
 
     // instantiate (clone) the declared variables from the target subMachine
-    for (auto i = target->declarations.begin(); i!=target->declarations.end(); i++) {           // reminder: declarations is map<string,pair<hsmType,variable *>>
-        instantiations.insert(std::pair<std::string,variable *>(i->first, i->second.second->clone()));
+    for (std::map<std::string, variable *>::iterator i = target->declarations.begin(); i!=target->declarations.end(); i++) {           // reminder: declarations is map<string,variable *>
+        instantiations.insert(std::pair<std::string, variable *>(i->first, i->second->clone()));
     }
 }
 
@@ -311,7 +311,7 @@ void rtFrame::encodeMsg() {
                 subMachine * theSrcSubMachine = currentState->mySubMachine;
                 for (auto k=0;k<j->theHeight;k++)
                     theSrcSubMachine=theSrcSubMachine->parentSubMachine;
-                variable * theSrcVariable=theSrcSubMachine->declarations[varToClone].second;
+                variable * theSrcVariable=theSrcSubMachine->declarations[varToClone];
                 thePdu->payload[varbindNumber]=theSrcVariable->clone();
             }
         varbindNumber++;

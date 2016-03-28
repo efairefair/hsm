@@ -9,9 +9,8 @@ class pListEntry {
     friend class edge;
     friend class rtFrame;
     private:
-        pListEntry(std::string newName, hsmType newType, uint16_t heightAbove) : theName(newName), theType(newType), theHeight(heightAbove) { };
+        pListEntry(std::string newName, uint16_t heightAbove) : theName(newName), theHeight(heightAbove) { };
         const std::string theName;
-        const hsmType theType;
         const uint16_t theHeight;
 };
 

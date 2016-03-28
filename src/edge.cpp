@@ -37,8 +37,7 @@ void edge::addParameter(std::string newParameterName) {
     assert(i->declarations.find(newParameterName) != i->declarations.end());    // ensure we found the variable
 
     // this was kinda hard to read so I broke it into three statements
-    std::pair<hsmType,variable *> theDeclaration = i->declarations[newParameterName];
-    pListEntry newParameter(newParameterName,theDeclaration.first,heightAbove);
+    pListEntry newParameter(newParameterName,heightAbove);
     this->pList.push_back( newParameter );
 }
 

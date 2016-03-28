@@ -24,8 +24,9 @@ class subMachine
     friend class state;
     public:
         subMachine * addSubMachine(std::string);
-        void addVariable(std::string, variable *, hsmType);
+        //void addVariable(std::string, variable *, hsmType);
         state * startState;
+        std::map<std::string, variable *> declarations;   // variable declarations for this subMachine
     private:
         subMachine(hsm *);                                // to create the Initial (top-most) sub-machine of hsm
         subMachine(subMachine * parent,std::string name); // to create all other sub-machines
@@ -34,7 +35,7 @@ class subMachine
         hsm * myHsm;
         subMachine * parentSubMachine;
         std::multimap<state *, state *> stateTable;                         // key=value; key is parent-of value; if key=0 it's the Start state
-        std::map<std::string, std::pair<hsmType,variable *>>declarations;   // variable declarations for this subMachine
+
 };
 
 #endif // SUBMACHINE_H

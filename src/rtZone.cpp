@@ -215,11 +215,11 @@ rtFrame * rtZone::makeFrame(rtZone * theZone, subMachine * targetSubMachine)  {
         newFramesCreated++;
     }
 
-    // copy the variables declared in the targetSubMachine.  Note they were previously instantiated so no need to allocate new
-    for(std::map<std::string,std::pair<hsmType,variable *>>::iterator j = targetSubMachine->declarations.begin();j!=targetSubMachine->declarations.end();j++) {
+    // copy the variables declared in the targetSubMachine.  Note they were previously malloc'ed by the constructor
+    for(std::map<std::string,variable *>::iterator j = targetSubMachine->declarations.begin();j!=targetSubMachine->declarations.end();j++) {
         std::string theName = j->first;
-        std::pair<hsmType, variable *> theDeclaration = j->second;
-        *(newFrame->instantiations[theName]) = *(theDeclaration.second);
+        variable * theDeclaration = j->second;
+        *(newFrame->instantiations[theName]) = *(theDeclaration);
     }
     return newFrame;
 }

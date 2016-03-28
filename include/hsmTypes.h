@@ -10,15 +10,10 @@
 // types for hsm storage
 // for now just a few types
 //
-typedef bool                              hsmBool;
-typedef int64_t                           hsmInt;
 typedef uint64_t                          hsmUint;
 typedef std::string                       hsmString;
 typedef std::atomic<hsmUint>              hsmAtomicUint;
 typedef std::vector<hsmUint>              hsmPath;
-
-// an enum for the above - ideally we'll get rid of this and just use templates
-typedef enum {hsmBoolType, hsmIntType, hsmUintType, hsmStringType, hsmAtomicUintType, hsmPathType} hsmType;
 
 typedef enum {vertical, horizontal} forwardLinkType;
 
@@ -33,15 +28,12 @@ class codeFragment;
 class edge;
 class subMachine;
 class hsm;
-
-class adverb;
-
 class rtTree;
 class rtZone;
 class rtFrame;
 
-typedef bool (*predType)(rtFrame *);
-typedef void (*codeType)(rtFrame *);
+typedef bool (*predType)(rtFrame *);    // predicates - boolean functions
+typedef void (*codeType)(rtFrame *);    // code fragments - void functions
 
 //class hsmBoolVariable;
 //class hsmIntVariable;

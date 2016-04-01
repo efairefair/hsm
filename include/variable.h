@@ -23,8 +23,8 @@ class variable {
 template <class T> class hsmVariable : public variable {
     public:
         ~hsmVariable() {};
-        hsmVariable() {};
-        hsmVariable(T theInitialData) : theValue(theInitialData) {};
+        hsmVariable() {};                                               // for those rare times when the variable will not be initialized
+        hsmVariable(T theInitialData) : theValue(theInitialData) {};    // for all other times
         bool operator==(variable & rhs);
         bool operator<(variable & rhs);
         bool operator<=(variable & rhs);
